@@ -9,12 +9,8 @@ import (
 func CreateResponse(w http.ResponseWriter, status string, statusCode int, input string) {
 	w.Header().Set("Content-Type", "application/json")
 
-	data := map[string]interface{}{
-		"status":     status,
-		"statusCode": statusCode,
-		"data":       input,
-	}
+	res := json.RawMessage(input)
 
-	response, _ := json.MarshalIndent(data, "", "    ")
+	response, _ := json.MarshalIndent(res, "", "    ")
 	fmt.Fprint(w, string(response))
 }
