@@ -6,9 +6,7 @@ import (
 	"net/http"
 )
 
-func CreateResponse(w http.ResponseWriter, status string, statusCode int, input string) {
-	w.Header().Set("Content-Type", "application/json")
-
+func CreateResponse(w http.ResponseWriter, input string) {
 	res := json.RawMessage(input)
 
 	response, _ := json.MarshalIndent(res, "", "    ")

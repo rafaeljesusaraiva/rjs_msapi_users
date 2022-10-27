@@ -6,10 +6,35 @@ import (
 
 	"github.com/julienschmidt/httprouter"
 	"github.com/rafaeljesusaraiva/rjs_msapi_users/handlers"
+	"github.com/rafaeljesusaraiva/rjs_msapi_users/initializers"
+	"github.com/rafaeljesusaraiva/rjs_msapi_users/token"
 )
 
-func main() {
+func init() {
+	config, err := initializers.LoadConfig(".")
+	if err != nil {
+		log.Fatal("? Could not load environment variables", err)
+	}
+
+	initializers.ConnectDB(&config)
+
+	tokenMaker, err := token.NewPasetoMaker(config.TokenSymmetricKey)
+	if err != nil {
+		log.Fatal("cannot create token maker: %w", err)
+		return
+	}
+
 	router := httprouter.New()
+	initializers.InitializeServer(config, tokenMaker, router)
+}
+
+func main() {
+	config, err := initializers.LoadConfig(".")
+	if err != nil {
+		log.Fatal("? Could not load environment variables", err)
+	}
+
+	router := initializers.GetSRV().Router
 
 	// Set CORS
 	router.GlobalOPTIONS = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -26,15 +51,17 @@ func main() {
 
 	router.NotFound = http.HandlerFunc(RouteNotFound)
 
-	router.GET("/", Hello)                     // Public
-	router.POST("/create", handlers.CreateOne) // Public
-	router.POST("/update", handlers.UpdateOne) // Self or Admin
-	router.POST("/delete", handlers.DeleteOne) // Self or Admin
-	router.GET("/self", handlers.GetSelf)      // Self only
-	router.GET("/all", handlers.GetAll)        // Admin only
-	router.GET("/get/:id", handlers.GetOne)    // Admin only
+	router.GET("/", Hello)                         // Public
+	router.GET("/healthchecker", HealthChecker)    // Public
+	router.POST("/login", handlers.LoginRoute)     // Public
+	router.POST("/create", handlers.CreateOne)     // Public
+	router.POST("/update/:id", handlers.UpdateOne) // Self or Admin
+	router.POST("/delete/:id", handlers.DeleteOne) // Self or Admin
+	router.GET("/self", handlers.GetSelf)          // Self only
+	router.GET("/all", handlers.GetAll)            // Admin only
+	router.GET("/get/:id", handlers.GetOne)        // Admin only
 
-	log.Fatal(http.ListenAndServe(":8080", router))
+	log.Fatal(http.ListenAndServe(":"+config.ServerPort, router))
 }
 
 func Hello(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
@@ -49,13 +76,21 @@ func Hello(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 		`"GET /get/:id": "Get User by ID (Admin)"` +
 		`}` +
 		`}`
-	handlers.CreateResponse(w, "success", 200, response)
+	handlers.CreateResponse(w, response)
+}
+
+func HealthChecker(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+	response := `{` +
+		`"status": "success",` +
+		`"message": "Welcome to Users Microservice health check!"` +
+		`}`
+	handlers.CreateResponse(w, response)
 }
 
 func RouteNotFound(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotFound) // StatusNotFound = 404
 
-	data := "The requested page was not found"
+	data := `{"info": "The requested route was not found"}`
 
-	handlers.CreateResponse(w, "notFound", 404, data)
+	handlers.CreateResponse(w, data)
 }

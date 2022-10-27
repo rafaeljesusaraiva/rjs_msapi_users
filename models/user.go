@@ -1,20 +1,18 @@
 package models
 
 import (
-	"errors"
-	"html"
-	"strings"
+	"fmt"
 	"time"
 
-	"github.com/badoux/checkmail"
+	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 )
 
 type User struct {
-	Id uint32 `json:"id"`
+	Id uuid.UUID `gorm:"type:uuid;default:uuid_generate_v4();primary_key"`
 	// Authentication Data
-	Username string `gorm:"primary_key;auto_increment" json:"username"`
-	Email    string `gorm:"size:255;not null;unique" json:"author"`
+	Username string `gorm:"size:255;unique" json:"username"`
+	Email    string `gorm:"size:255;not null;unique" json:"email"`
 	Password string `gorm:"size:100;not null;" json:"password"`
 
 	// Backend Data
@@ -22,14 +20,15 @@ type User struct {
 	CreatedAt        time.Time `gorm:"default:CURRENT_TIMESTAMP" json:"createdat"`
 	ConfirmedAccount bool      `gorm:"default:false" json:"confirmedaccount"`
 	BlockedAccount   bool      `gorm:"default:false" json:"blockedaccount"`
+	Role             string    `gorm:"size:255;default:'client'" json:"role"`
 	UpdatedAt        time.Time `gorm:"default:CURRENT_TIMESTAMP" json:"updatedat"`
 	// -- Providers
-	ProviderFacebookId string `gorm:"size:255;unique" json:"providerfacebookid"`
-	ProviderGoogleId   string `gorm:"size:255;unique" json:"providergoogleid"`
-	ProviderTwitterId  string `gorm:"size:255;unique" json:"providertwitterid"`
+	ProviderFacebookId string `gorm:"size:255" json:"providerfacebookid"`
+	ProviderGoogleId   string `gorm:"size:255" json:"providergoogleid"`
+	ProviderTwitterId  string `gorm:"size:255" json:"providertwitterid"`
 	// -- Tokens
-	AccountConfirmationToken string `gorm:"size:255;unique" json:"accountconfirmationtoken"`
-	ResetPasswordToken       string `gorm:"size:255;unique" json:"resetpasswordtoken"`
+	AccountConfirmationToken string `gorm:"size:255" json:"accountconfirmationtoken"`
+	ResetPasswordToken       string `gorm:"size:255" json:"resetpasswordtoken"`
 
 	// Personal Data
 	FirstName      string `gorm:"size:100" json:"firstname"`
@@ -37,74 +36,54 @@ type User struct {
 	ProfilePicture string `gorm:"size:255" json:"profilepicture"`
 }
 
-// Helpers
-
-func Hash(password string) ([]byte, error) {
-	return bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+type LoginUserRequest struct {
+	Username string `json:"username" binding:"required,alphanum"`
+	Password string `json:"password" binding:"required,min=6"`
 }
 
-func VerifyPassword(hashedPassword, password string) error {
-	return bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(password))
+type userResponse struct {
+	Username  string    `json:"username"`
+	FullName  string    `json:"full_name"`
+	Email     string    `json:"email"`
+	Role      string    `json:"role"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
-func (u *User) BeforeSave() error {
-	hashedPassword, err := Hash(u.Password)
+type LoginUserResponse struct {
+	AccessToken string       `json:"access_token"`
+	User        userResponse `json:"user"`
+}
+
+type UserResponse struct {
+	Id             uuid.UUID
+	Username       string
+	Email          string
+	FirstName      string
+	LastName       string
+	ProfilePicture string
+	CreatedAt      time.Time
+	Role           string
+}
+
+func NewUserResponse(user User) userResponse {
+	return userResponse{
+		Username:  user.Username,
+		FullName:  user.FirstName + " " + user.LastName,
+		Email:     user.Email,
+		CreatedAt: user.CreatedAt,
+	}
+}
+
+// HashPassword returns the bcrypt hash of the password
+func HashPassword(password string) (string, error) {
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
-		return err
+		return "", fmt.Errorf("failed to hash password: %w", err)
 	}
-	u.Password = string(hashedPassword)
-	return nil
+	return string(hashedPassword), nil
 }
 
-func (u *User) Prepare() {
-	u.Id = 0
-	u.FirstName = html.EscapeString(strings.TrimSpace(u.FirstName))
-	u.LastName = html.EscapeString(strings.TrimSpace(u.LastName))
-	u.Email = html.EscapeString(strings.TrimSpace(u.Email))
-	u.Username = html.EscapeString(strings.TrimSpace(u.Username))
-	u.CreatedAt = time.Now()
-	u.UpdatedAt = time.Now()
-}
-
-func (u *User) Validate(action string) error {
-	switch strings.ToLower(action) {
-	case "update":
-		if u.Password == "" {
-			return errors.New("palavra-passe é obrigatória")
-		}
-		if u.Email == "" {
-			return errors.New("email é obrigatório")
-		}
-		if err := checkmail.ValidateFormat(u.Email); err != nil {
-			return errors.New("email inválido")
-		}
-
-		return nil
-	case "login":
-		if u.Password == "" {
-			return errors.New("palavra-passe é obrigatória")
-		}
-		if u.Email == "" {
-			return errors.New("email é obrigatório")
-		}
-		if err := checkmail.ValidateFormat(u.Email); err != nil {
-			return errors.New("email inválido")
-		}
-		return nil
-
-	default:
-		if u.Username == "" {
-			return errors.New("nome de utilizador é obrigatório")
-		}
-		if u.Password == "" {
-			return errors.New("palavra-passe é obrigatória")
-		}
-		if u.Email == "" {
-			return errors.New("email é obrigatório")
-		}
-		if err := checkmail.ValidateFormat(u.Email); err != nil {
-			return errors.New("email inválido")
-		}
-		return nil
-	}
+// CheckPassword checks if the provided password is correct or not
+func CheckPassword(password string, hashedPassword string) error {
+	return bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(password))
 }
